@@ -8,3 +8,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY earthquake_bot.py .
 
 CMD ["python", "earthquake_bot.py"]
+# forced rebuild
