@@ -22,7 +22,7 @@ ISRAEL_LON = 34.7818
 USGS_API_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson"
 
 # Minimum magnitude
-MIN_MAGNITUDE = 1.0
+MIN_MAGNITUDE = 4.0
 
 # File to track sent earthquakes
 SENT_FILE = os.path.join(os.path.dirname(__file__), "sent_earthquakes.json")
@@ -86,16 +86,10 @@ def format_earthquake_message(eq):
     distance_km = calculate_distance(lat, lon, ISRAEL_LAT, ISRAEL_LON)
     maps_link = f"https://www.google.com/maps?q={lat},{lon}"
 
-    message = f"""🌍 <b>רעידת אדמה התגלתה!</b>
+    message = f"""⚡ <b>{magnitude}</b>  ·  {place}
 
-📊 <b>עוצמה:</b> {magnitude}
-📍 <b>מיקום:</b> {place}
-📏 <b>מרחק מישראל:</b> {distance_km:,.0f} ק"מ
-🎯 <b>קואורדינטות:</b> {lat:.4f}, {lon:.4f}
-📐 <b>עומק:</b> {depth:.1f} ק"מ
-🕐 <b>זמן:</b> {time_str}
-
-🗺️ <a href="{maps_link}">צפה במפה</a>"""
+📍 {distance_km:,.0f} ק״מ מישראל
+🔗 <a href="{maps_link}">מפה</a>"""
 
     return message
 
