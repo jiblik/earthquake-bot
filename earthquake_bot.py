@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from math import radians, sin, cos, sqrt, atan2
 
 TELEGRAM_BOT_TOKEN = "8479703528:AAFG2p9UsAC65_3IMm2aCvw9klvFTjJ5lvc"
-TELEGRAM_CHAT_ID = 159306920
 ISRAEL_LAT = 32.0853
 ISRAEL_LON = 34.7818
 USGS_API_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson"
 MIN_MAGNITUDE = 4.0
 SENT_FILE = "/tmp/sent_earthquakes.json"
+SUBSCRIBERS_FILE = "/tmp/subscribers.json"
 
 
 def load_sent():
@@ -33,6 +33,24 @@ def save_sent(sent):
         pass
 
 
+def load_subscribers():
+    try:
+        if os.path.exists(SUBSCRIBERS_FILE):
+            with open(SUBSCRIBERS_FILE, 'r') as f:
+                return set(json.load(f))
+    except:
+        pass
+    return set()
+
+
+def save_subscribers(subs):
+    try:
+        with open(SUBSCRIBERS_FILE, 'w') as f:
+            json.dump(list(subs), f)
+    except:
+        pass
+
+
 def calc_distance(lat1, lon1, lat2, lon2):
     R = 6371
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
@@ -43,11 +61,11 @@ def calc_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def send_msg(text):
+def send_msg(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
         r = requests.post(url, json={
-            "chat_id": TELEGRAM_CHAT_ID,
+            "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True
@@ -55,6 +73,43 @@ def send_msg(text):
         return r.json().get("ok", False)
     except:
         return False
+
+
+def broadcast(subscribers, text):
+    for chat_id in subscribers:
+        send_msg(chat_id, text)
+        time.sleep(0.1)
+
+
+def check_new_subscribers(subscribers):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    try:
+        r = requests.get(url, timeout=30)
+        updates = r.json().get("result", [])
+
+        for update in updates:
+            msg = update.get("message", {})
+            text = msg.get("text", "")
+            chat_id = msg.get("chat", {}).get("id")
+
+            if chat_id and text == "/start" and chat_id not in subscribers:
+                subscribers.add(chat_id)
+                save_subscribers(subscribers)
+                send_msg(chat_id, "🤖 <b>ברוך הבא לבוט התראות רעידות אדמה!</b>\n\nתקבל התראות על רעידות אדמה בעוצמה 4.0 ומעלה.\n\nשלח /stop כדי להפסיק לקבל התראות.")
+
+            elif chat_id and text == "/stop" and chat_id in subscribers:
+                subscribers.discard(chat_id)
+                save_subscribers(subscribers)
+                send_msg(chat_id, "👋 הוסרת מרשימת המנויים. שלח /start כדי להירשם מחדש.")
+
+        # Clear processed updates
+        if updates:
+            last_update_id = updates[-1]["update_id"]
+            requests.get(f"{url}?offset={last_update_id + 1}", timeout=10)
+    except:
+        pass
+
+    return subscribers
 
 
 def format_msg(eq):
@@ -83,10 +138,18 @@ def format_msg(eq):
 
 def main():
     sent = load_sent()
-    send_msg("🤖 <b>בוט רעידות אדמה פעיל!</b>\n\nעוצמה מינימלית: 4.0")
+    subscribers = load_subscribers()
+
+    # Add owner as default subscriber
+    subscribers.add(159306920)
+    save_subscribers(subscribers)
 
     while True:
         try:
+            # Check for new subscribers
+            subscribers = check_new_subscribers(subscribers)
+
+            # Fetch earthquakes
             r = requests.get(USGS_API_URL, timeout=30)
             quakes = r.json().get("features", [])
 
@@ -100,7 +163,7 @@ def main():
                 sent.add(eq_id)
 
                 if mag >= MIN_MAGNITUDE:
-                    send_msg(format_msg(eq))
+                    broadcast(subscribers, format_msg(eq))
                     save_sent(sent)
                     time.sleep(1)
 
