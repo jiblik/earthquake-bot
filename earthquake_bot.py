@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Earthquake Alert Bot v3.0
 import requests
 import time
 import json
