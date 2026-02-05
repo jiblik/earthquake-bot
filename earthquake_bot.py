@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Earthquake Alert Telegram Bot
-"""
-
 import requests
 import time
 import json
@@ -10,25 +6,16 @@ import os
 from datetime import datetime, timezone
 from math import radians, sin, cos, sqrt, atan2
 
-# Configuration
 TELEGRAM_BOT_TOKEN = "8479703528:AAFG2p9UsAC65_3IMm2aCvw9klvFTjJ5lvc"
 TELEGRAM_CHAT_ID = 159306920
-
-# Israel coordinates (Tel Aviv)
 ISRAEL_LAT = 32.0853
 ISRAEL_LON = 34.7818
-
-# USGS Earthquake API
 USGS_API_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson"
-
-# Minimum magnitude
 MIN_MAGNITUDE = 4.0
-
-# File to track sent earthquakes
-SENT_FILE = os.path.join(os.path.dirname(__file__), "sent_earthquakes.json")
+SENT_FILE = "/tmp/sent_earthquakes.json"
 
 
-def load_sent_earthquakes():
+def load_sent():
     try:
         if os.path.exists(SENT_FILE):
             with open(SENT_FILE, 'r') as f:
@@ -38,7 +25,7 @@ def load_sent_earthquakes():
     return set()
 
 
-def save_sent_earthquakes(sent):
+def save_sent(sent):
     try:
         with open(SENT_FILE, 'w') as f:
             json.dump(list(sent), f)
@@ -46,7 +33,7 @@ def save_sent_earthquakes(sent):
         pass
 
 
-def calculate_distance(lat1, lon1, lat2, lon2):
+def calc_distance(lat1, lon1, lat2, lon2):
     R = 6371
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
     dlat = lat2 - lat1
@@ -56,96 +43,76 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def send_telegram_message(message):
+def send_msg(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
     try:
-        response = requests.post(url, json=payload, timeout=30)
-        return response.json().get("ok", False)
-    except Exception as e:
+        r = requests.post(url, json={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        }, timeout=30)
+        return r.json().get("ok", False)
+    except:
         return False
 
 
-def format_earthquake_message(eq):
+def format_msg(eq):
     props = eq["properties"]
     coords = eq["geometry"]["coordinates"]
-
-    lon, lat, depth = coords[0], coords[1], coords[2] or 0
-    magnitude = props.get("mag", "N/A")
-    place = props.get("place", "Unknown location")
+    lon, lat = coords[0], coords[1]
+    mag = props.get("mag", "?")
+    place = props.get("place", "Unknown")
     time_ms = props.get("time", 0)
 
     eq_time = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc)
     time_str = eq_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    distance = calc_distance(lat, lon, ISRAEL_LAT, ISRAEL_LON)
+    maps = f"https://www.google.com/maps?q={lat},{lon}"
 
-    distance_km = calculate_distance(lat, lon, ISRAEL_LAT, ISRAEL_LON)
-    maps_link = f"https://www.google.com/maps?q={lat},{lon}"
+    return f"""🌍 <b>רעידת אדמה התגלתה!</b>
 
-    message = f"""🌍 <b>רעידת אדמה התגלתה!</b>
-
-📊 <b>עוצמה:</b> {magnitude}
+📊 <b>עוצמה:</b> {mag}
 📍 <b>מיקום:</b> {place}
-📏 <b>מרחק מישראל:</b> {distance_km:,.0f} ק"מ
+📏 <b>מרחק מישראל:</b> {distance:,.0f} ק"מ
 🎯 <b>קואורדינטות:</b> {lat:.4f}, {lon:.4f}
 🕐 <b>זמן:</b> {time_str}
 
-🗺️ <a href="{maps_link}">צפה במפה</a>"""
-
-    return message
-
-
-def fetch_earthquakes():
-    try:
-        response = requests.get(USGS_API_URL, timeout=30)
-        data = response.json()
-        return data.get("features", [])
-    except:
-        return []
+🗺️ <a href="{maps}">צפה במפה</a>"""
 
 
 def main():
-    sent_earthquakes = load_sent_earthquakes()
-
-    # Send startup message
-    send_telegram_message("🤖 <b>בוט התראות רעידות אדמה פעיל!</b>\n\nמקור הנתונים: USGS")
+    sent = load_sent()
+    send_msg("🤖 <b>בוט רעידות אדמה פעיל!</b>\n\nעוצמה מינימלית: 4.0")
 
     while True:
         try:
-            earthquakes = fetch_earthquakes()
+            r = requests.get(USGS_API_URL, timeout=30)
+            quakes = r.json().get("features", [])
 
-            for eq in earthquakes:
+            for eq in quakes:
                 eq_id = eq.get("id")
-                magnitude = eq["properties"].get("mag", 0) or 0
+                mag = eq["properties"].get("mag", 0) or 0
 
-                if eq_id in sent_earthquakes:
+                if eq_id in sent:
                     continue
 
-                if magnitude < MIN_MAGNITUDE:
-                    sent_earthquakes.add(eq_id)
-                    continue
+                sent.add(eq_id)
 
-                message = format_earthquake_message(eq)
-                if send_telegram_message(message):
-                    sent_earthquakes.add(eq_id)
-                    save_sent_earthquakes(sent_earthquakes)
+                if mag >= MIN_MAGNITUDE:
+                    send_msg(format_msg(eq))
+                    save_sent(sent)
+                    time.sleep(1)
 
-                time.sleep(1)
-
-            # Clean old entries (keep last 500)
-            if len(sent_earthquakes) > 500:
-                sent_earthquakes = set(list(sent_earthquakes)[-500:])
-                save_sent_earthquakes(sent_earthquakes)
+            if len(sent) > 500:
+                sent = set(list(sent)[-200:])
+                save_sent(sent)
 
             time.sleep(60)
 
         except KeyboardInterrupt:
             break
-        except Exception as e:
+        except:
             time.sleep(30)
 
 
