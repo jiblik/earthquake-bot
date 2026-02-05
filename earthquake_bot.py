@@ -62,7 +62,7 @@ def send_telegram_message(message):
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
         "parse_mode": "HTML",
-        "disable_web_page_preview": False
+        "disable_web_page_preview": True
     }
     try:
         response = requests.post(url, json=payload, timeout=30)
@@ -86,10 +86,15 @@ def format_earthquake_message(eq):
     distance_km = calculate_distance(lat, lon, ISRAEL_LAT, ISRAEL_LON)
     maps_link = f"https://www.google.com/maps?q={lat},{lon}"
 
-    message = f"""⚡ <b>{magnitude}</b>  ·  {place}
+    message = f"""🌍 <b>רעידת אדמה התגלתה!</b>
 
-📍 {distance_km:,.0f} ק״מ מישראל
-🔗 <a href="{maps_link}">מפה</a>"""
+📊 <b>עוצמה:</b> {magnitude}
+📍 <b>מיקום:</b> {place}
+📏 <b>מרחק מישראל:</b> {distance_km:,.0f} ק"מ
+🎯 <b>קואורדינטות:</b> {lat:.4f}, {lon:.4f}
+🕐 <b>זמן:</b> {time_str}
+
+🗺️ <a href="{maps_link}">צפה במפה</a>"""
 
     return message
 
